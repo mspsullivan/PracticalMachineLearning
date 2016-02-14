@@ -1,0 +1,115 @@
+---
+title: "Weight Lifting Technique Prediction"
+author: "Robert Sullivan"
+date: "February 3, 2016"
+output: html_document
+---
+
+# Summary
+This is the write-up and report for Robert Sullivans class project for the class:
+"Practical Machine Learning" from Johns Hopkins via Coursera
+2/14/2016
+
+The data is from accellerometers placed on novice weightlifters dompleting a bicep curl. Class A is correctly done. The other classes are bad form. From the paper:
+
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)."[1]
+
+
+##How I built the Model:
+1. Load the training set.
+2. Review the and choose variables to use for prediction.
+3. Build a model, check for error and fit.
+4. Return to step 2 or 3 to get a better model.
+5. Run the test data against the model.
+
+##Decisions To Make:
+Which machine learning algorythm to start with:
+I'll start with the simplest one and make it more complex if needed.
+- regression: generalized linear model "glm" no: only 2-class outcomes
+- K nearest neighbors method="knn" (results: )
+- rpart recursive partitioning and regression trees method="rpart" tune_length=9
+- random forest method="rf" 
+
+##Which preprocessing to run:
+By running summary(trainingset) I can see the variables vary widely in scale and center. 
+The training data has a large number of NAs and blanks.
+Some columns are almost completely NAs and some have just a few NAs.
+
+###Preprocessing begins with the read:
+I found that it's really important to include NA specifications in the read. This takes care of the "NA"s and blanks in the input file.
+
+Start by scaling and centering the variables. Hopefully, there will be some stong predictors in the bunch. This is the default behavior of preprocess() so it worked well. 
+Along the way I used "pca" along with preprocess(). That worked well when using the regression models "lm" and "glm".
+
+##Which factors to use?
+I took a look at the data and read the paper[1] below. The factors with acceleramoter data are numbered 8 - 159. The first 7 appear to be administrative, like 'user_name' and 'timestamp'. I dropped those from the final training model. In an early run 'user_name' turned out to be one of the better predictors. That is sure to be a bad predictor for unseen test data.
+
+```{r}
+library(caret)
+library(randomForest)
+library(adabag)
+training <- read.csv("pml-training.csv", header = TRUE,  na.strings = c("", " ", "NA"))
+testing <- read.csv("pml-testing.csv", header = TRUE,  na.strings = c("", " ", "NA"))
+
+training[training =="#DIV/0!"] <- NA
+testing[testing =="#DIV/0!"] <- NA
+
+trimTrain <- training[,8:159]
+
+preObj <- preProcess(trimTrain[colSums(is.na(trimTrain)) == 0])
+
+set.seed(2222)
+trainPC <- predict(preObj, trimTrain[colSums(is.na(trimTrain)) == 0])
+```
+# Scale and center the predictors
+Now that the NAs and weak columns have been removed the predictor variables should all be scaled and centered. This boxplot on the first 10 variables shows that.
+```{r}
+boxplot(trainPC[,1:10])
+# no time to run both models inside of the .rmd
+# modFitAda <- train( training$classe ~., method = "AdaBoost.M1", data=trainPC, na.action = na.omit)
+
+modFitRf <- train( training$classe ~., method = "rf", data=trainPC, na.action = na.omit)
+
+trimTest <- testing[,8:159]
+testPC <- predict(preObj, trimTest[colSums(is.na(trimTest)) == 0])
+testResult <- predict(modFitRf, testPC)
+```
+##Model Review
+The Model produces high accuracy using 25 reps. Here are the results and a chart that shows :
+```{r}
+modFitRf
+varImpPlot(modFitRf$finalModel, n.var=20, main = "Weightlifting Random Forest Importance")
+suppressWarnings(plot(modFitRf$finalModel, log="y", main = "Weightlifting Random Forest Error"))
+```
+##Cross Validation:
+While we could do cross-validation with linear models that is not necessary with random forests. In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally.
+
+#Results
+Here are the final results to submit to the quiz.
+Also look at the Ada model in the appendix.
+We used the Random Forest model.
+```{r}
+testResult
+# [1] B A B A A E D B A A B C B A E E A B B B
+```
+caret ensemble and model stacking would be a good approach for an even better model.
+
+I would stack the model with an AdaBoost.M1 model. Like one I generated along the way giving high accuracy.
+
+with  AdaBoost.M1 set results:
+Zhu        3         100     0.9155911  0.8933542  0.006141269  0.007719012
+Zhu        3         150     0.9325398  0.9147250  0.005195218  0.006543046
+
+Accuracy was used to select the optimal model using  the largest value.
+The final values used for the model were mfinal = 150, maxdepth = 3 and coeflearn = Zhu. 
+
+with Random Forest results:
+mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+2    0.9932872  0.9915089  0.001022426  0.001292197
+
+Test Results:
+[1] B A B A A E D B A A B C B A E E A B B B
+
+
+#Citation:
+[1] Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6. 
